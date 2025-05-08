@@ -1,0 +1,95 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt 
+import seaborn as sns
+import matplotlib
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+import mlflow
+import mlflow.sklearn
+from sklearn.ensemble import RandomForestClassifier
+import pickle
+from mlflow.models import infer_signature
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from xgboost import XGBClassifier
+
+
+mlflow.set_experiment('Experiment 2')
+mlflow.set_tracking_uri('https://dagshub.com/RajeshB-0699/mlops_fullstack.mlflow')
+
+import dagshub
+dagshub.init(repo_owner='RajeshB-0699', repo_name='mlops_fullstack', mlflow=True)
+
+data = pd.read_csv('https://raw.githubusercontent.com/RajeshB-0699/datasets_raw/refs/heads/main/water_potability.csv')
+
+train_data, test_data = train_test_split(data, test_size = 0.2, random_state=42)
+
+def fill_missing_with_median(df):
+  for column in df.columns:
+    if df[column].isnull().any():
+      median_value = df[column].median()
+      df[column].fillna(median_value, inplace = True)
+    return df
+  
+train_processed_data = fill_missing_with_median(train_data)
+test_processed_data = fill_missing_with_median(test_data)
+
+X_train = train_processed_data.drop(columns = ['Potability'], axis =1)
+X_test = test_processed_data.drop(columns = ['Potability'], axis = 1)
+y_train = train_processed_data['Potability']
+y_test = test_processed_data['Potability']
+
+models = {
+  'Random Forest' : RandomForestClassifier(),
+  'Logistic Regression' : LogisticRegression(),
+  'Support Vector' : SVC(),
+  'Decision Tree' : DecisionTreeClassifier(),
+  'K-Neighbors' : KNeighborsClassifier(),
+  'XG Boost' : XGBClassifier() 
+}
+
+
+import mlflow
+with mlflow.start_run(run_name = "Water prediction using mlflow dagshub with n number of base models"):
+  for model_name , model in models.items():
+    with mlflow.start_run(run_name = model_name, nested = True):
+      model.fit(X_train, y_train)
+
+      model_filename = f"{model_name.replace(' ', '_')}.pkl"
+      pickle.dump(model, open(model_filename, 'wb'))
+
+      y_pred = model.predict(X_test)
+
+      accuracy = accuracy_score(y_pred, y_test)
+      precision = precision_score(y_pred, y_test)
+      f1 = f1_score(y_pred, y_test)
+      recall = recall_score(y_pred, y_test)
+
+      cm = confusion_matrix(y_test, y_pred)
+      plt.figure(figsize= (5,5))
+      sns.heatmap(cm, annot=True)
+      plt.xlabel('pred value')
+      plt.ylabel('Actual Value')
+
+      plt.title('confusion_matrix')
+
+      plt.savefig('confusion_matrix.png')
+
+      mlflow.log_artifact('confusion_matrix.png')
+
+      mlflow.log_artifact(__file__)
+
+      mlflow.log_metric('accuracy', accuracy)
+      mlflow.log_metric('precision',precision)
+      mlflow.log_metric('f1', f1)
+      mlflow.log_metric('recall',recall)
+
+      mlflow.sklearn.log_model(model, model_name.replace(' ','_'))
+  
+      mlflow.set_tag("author","Rajesh B")
+      mlflow.set_tag("model", "Models all inclusive")
+
+  
